@@ -24,25 +24,85 @@ void reap_children(int sig) {
     ;
 }
 
-void handle_request(int cfd) {
+void send_error(char *msg) {}
+long get_file_size_ftell(FILE *fp) {
+  long size = -1; // Initialize size to an error value
 
+  if (fseek(fp, 0L, SEEK_END) == 0) { // Move pointer to end
+    size = ftell(fp);                 // Get current position (size)
+    if (size == -1L) {
+      perror("Failed to get file position");
+    }
+  } else {
+    perror("Failed to seek to end of file");
+  }
+
+  rewind(fp);
+  return size;
+}
+void handle_get(int cfd, char *path) {
+  char complete_path[200];
+  strcpy(complete_path, "public");
+  if (!strcmp("/", path)) {
+    strcat(complete_path, "/index.html");
+  } else {
+    strcat(complete_path, path);
+  }
+  path = realpath(complete_path, NULL);
+
+  if (strncmp(path, "public", 6)) {
+    send_error("ILLEGAL PATH");
+    return;
+  }
+  FILE *fr = fopen(path, "rb");
+  if (fr == NULL) {
+    send_error("PATH NOT FOUND");
+    return;
+  }
+
+  long file_size = get_file_size_ftell(fr);
+  char buffer[BUFFER_SIZE];
+
+  size_t size = fread(buffer, sizeof(char), BUFFER_SIZE, fr);
+}
+void handle_delete(int cfd, char *path) {}
+
+void handle_request_type(int cfd, char *request_type, char *path) {
+  if (!strcmp(request_type, "GET")) {
+    handle_get(cfd, path);
+  } else if (!strcmp(request_type, "DELETE")) {
+    handle_delete(cfd, path);
+  } else {
+  }
+}
+
+void handle_request(int cfd) {
   char buffer[BUFFER_SIZE];
   ssize_t bytes_read = read(cfd, buffer, BUFFER_SIZE - 1);
   buffer[bytes_read] = 0;
-
   printf("It works!!!!\n");
   printf("%s\n", buffer);
 
-  char msg[] = "Hello world!";
-  int msg_size = sizeof(msg);
+  // GET, POST, ...
+  char request_type[10];
+  int i = 0, j = 0;
+  while (buffer[i] != ' ') {
+    request_type[i] = buffer[i];
+    i++;
+  }
 
-  int len =
-      snprintf(buffer, 1024,
-               "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: "
-               "%d\r\n\r\n%s",
-               msg_size, msg);
+  request_type[i] = 0;
+  char path[100];
+  i++;
+  while (buffer[i] != ' ') {
 
-  write(cfd, buffer, len);
+    path[j] = buffer[i];
+    j++;
+    i++;
+  }
+
+  path[j] = 0;
+  handle_request_type(cfd, request_type, path);
   close(cfd);
   exit(0);
 }
