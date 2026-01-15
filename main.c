@@ -97,6 +97,9 @@ char *get_header_type(char *path) {
   if (!strcmp(file_type, "js")) {
     return "text/js";
   }
+  if (!strcmp(file_type, "ico")) {
+    return "image/x-icon";
+  }
 
   return "text/plain";
 }
