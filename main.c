@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <limits.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdio.h>
@@ -19,13 +20,38 @@
     exit(EXIT_FAILURE);                                                        \
   } while (0)
 
+char public_root[PATH_MAX];
+
+// Resolve the absolute path of the 'public' folder relative to where you run
+// the server
+
 void reap_children(int sig) {
   while (waitpid(-1, NULL, WNOHANG) > 0)
     ;
 }
+void send_error(int fp, char *msg) {
+  char body[1024];
+  char response[2048];
 
-void send_error(char *msg) {}
-long get_file_size_ftell(FILE *fp) {
+  // 1. Format the HTML body using the 'msg' argument
+  int body_len = snprintf(body, sizeof(body),
+                          "<html><body><h1>%s</h1></body></html>", msg);
+
+  // 2. Construct the headers with the correct Content-Length
+  int response_len = snprintf(response, sizeof(response),
+                              "HTTP/1.1 404 Not Found\r\n"
+                              "Content-Type: text/html\r\n"
+                              "Content-Length: %d\r\n"
+                              "Connection: close\r\n"
+                              "\r\n"
+                              "%s",
+                              body_len, body);
+
+  // 3. Send everything
+  write(fp, response, response_len);
+}
+
+long get_file_size(FILE *fp) {
   long size = -1; // Initialize size to an error value
 
   if (fseek(fp, 0L, SEEK_END) == 0) { // Move pointer to end
@@ -40,6 +66,41 @@ long get_file_size_ftell(FILE *fp) {
   rewind(fp);
   return size;
 }
+
+char *get_header_type(char *path) {
+  int i = strlen(path) - 1;
+  while (i >= 0 && path[i] != '.' && path[i] != '/') {
+    i--;
+  }
+  if (path[i - 1] == '/')
+    return "text/plain";
+
+  i++;
+
+  char file_type[100];
+  int j = 0;
+
+  while (path[i] && j < 100) {
+    file_type[j++] = path[i++];
+  }
+  file_type[j] = 0;
+
+  if (!strcmp(file_type, "png")) {
+    return "image/png";
+  }
+  if (!strcmp(file_type, "html")) {
+    return "text/html";
+  }
+  if (!strcmp(file_type, "css")) {
+    return "text/css";
+  }
+  if (!strcmp(file_type, "js")) {
+    return "text/js";
+  }
+
+  return "text/plain";
+}
+
 void handle_get(int cfd, char *path) {
   char complete_path[200];
   strcpy(complete_path, "public");
@@ -48,22 +109,43 @@ void handle_get(int cfd, char *path) {
   } else {
     strcat(complete_path, path);
   }
-  path = realpath(complete_path, NULL);
-
-  if (strncmp(path, "public", 6)) {
-    send_error("ILLEGAL PATH");
+  char *resolved_path = realpath(complete_path, NULL);
+  if (resolved_path == NULL) {
+    send_error(cfd, "PATH NOT FOUND (File does not exist)");
     return;
   }
-  FILE *fr = fopen(path, "rb");
+  if (strncmp(resolved_path, public_root, strlen(public_root))) {
+    send_error(cfd, "ILLEGAL PATH");
+    return;
+  }
+  FILE *fr = fopen(resolved_path, "rb");
   if (fr == NULL) {
-    send_error("PATH NOT FOUND");
+    send_error(cfd, "PATH NOT FOUND");
     return;
   }
 
-  long file_size = get_file_size_ftell(fr);
+  long file_size = get_file_size(fr);
   char buffer[BUFFER_SIZE];
+  char *mime_type = get_header_type(resolved_path);
+  char header_buffer[1024];
+  int header_len =
+      snprintf(header_buffer, sizeof(header_buffer),
+               "HTTP/1.1 200 OK\r\n"
+               "Content-Type: %s\r\n"
+               "Content-Length: %ld\r\n"
+               "Connection: close\r\n"
+               "\r\n", // <--- The Empty Line means "Headers are done"
+               mime_type, file_size);
 
-  size_t size = fread(buffer, sizeof(char), BUFFER_SIZE, fr);
+  write(cfd, header_buffer, header_len);
+
+  size_t size;
+  while (size = fread(buffer, sizeof(char), BUFFER_SIZE, fr)) {
+    write(cfd, buffer, size);
+  }
+
+  free(resolved_path);
+  fclose(fr);
 }
 void handle_delete(int cfd, char *path) {}
 
@@ -81,12 +163,12 @@ void handle_request(int cfd) {
   ssize_t bytes_read = read(cfd, buffer, BUFFER_SIZE - 1);
   buffer[bytes_read] = 0;
   printf("It works!!!!\n");
-  printf("%s\n", buffer);
+  // printf("%s\n", buffer);
 
   // GET, POST, ...
   char request_type[10];
   int i = 0, j = 0;
-  while (buffer[i] != ' ') {
+  while (i < BUFFER_SIZE && buffer[i] != ' ') {
     request_type[i] = buffer[i];
     i++;
   }
@@ -94,7 +176,7 @@ void handle_request(int cfd) {
   request_type[i] = 0;
   char path[100];
   i++;
-  while (buffer[i] != ' ') {
+  while (i < BUFFER_SIZE && buffer[i] != ' ') {
 
     path[j] = buffer[i];
     j++;
@@ -108,6 +190,8 @@ void handle_request(int cfd) {
 }
 
 int main(int argc, char *argv[]) {
+
+  realpath("public", public_root);
   int sfd, cfd;
   socklen_t peer_addr_size;
 
