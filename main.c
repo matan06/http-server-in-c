@@ -30,14 +30,12 @@ void reap_children(int sig) {
     ;
 }
 void send_error(int fp, char *msg) {
-  char body[1024];
-  char response[2048];
+  char body[BUFFER_SIZE];
+  char response[BUFFER_SIZE * 2];
 
-  // 1. Format the HTML body using the 'msg' argument
   int body_len = snprintf(body, sizeof(body),
                           "<html><body><h1>%s</h1></body></html>", msg);
 
-  // 2. Construct the headers with the correct Content-Length
   int response_len = snprintf(response, sizeof(response),
                               "HTTP/1.1 404 Not Found\r\n"
                               "Content-Type: text/html\r\n"
@@ -47,15 +45,14 @@ void send_error(int fp, char *msg) {
                               "%s",
                               body_len, body);
 
-  // 3. Send everything
   write(fp, response, response_len);
 }
 
 long get_file_size(FILE *fp) {
-  long size = -1; // Initialize size to an error value
+  long size = -1;
 
-  if (fseek(fp, 0L, SEEK_END) == 0) { // Move pointer to end
-    size = ftell(fp);                 // Get current position (size)
+  if (fseek(fp, 0L, SEEK_END) == 0) {
+    size = ftell(fp);
     if (size == -1L) {
       perror("Failed to get file position");
     }
@@ -68,38 +65,21 @@ long get_file_size(FILE *fp) {
 }
 
 char *get_header_type(char *path) {
-  int i = strlen(path) - 1;
-  while (i >= 0 && path[i] != '.' && path[i] != '/') {
-    i--;
-  }
-  if (path[i - 1] == '/')
+  char *file_type = strrchr(path, '.');
+  if (file_type == NULL) {
     return "text/plain";
-
-  i++;
-
-  char file_type[100];
-  int j = 0;
-
-  while (path[i] && j < 100) {
-    file_type[j++] = path[i++];
   }
-  file_type[j] = 0;
 
-  if (!strcmp(file_type, "png")) {
+  if (!strcmp(file_type, "png"))
     return "image/png";
-  }
-  if (!strcmp(file_type, "html")) {
+  if (!strcmp(file_type, "html"))
     return "text/html";
-  }
-  if (!strcmp(file_type, "css")) {
+  if (!strcmp(file_type, "css"))
     return "text/css";
-  }
-  if (!strcmp(file_type, "js")) {
+  if (!strcmp(file_type, "js"))
     return "text/js";
-  }
-  if (!strcmp(file_type, "ico")) {
+  if (!strcmp(file_type, "ico"))
     return "image/x-icon";
-  }
 
   return "text/plain";
 }
