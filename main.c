@@ -111,19 +111,18 @@ void handle_get(int cfd, char *path) {
   char buffer[BUFFER_SIZE];
   char *mime_type = get_header_type(resolved_path);
   char header_buffer[1024];
-  int header_len =
-      snprintf(header_buffer, sizeof(header_buffer),
-               "HTTP/1.1 200 OK\r\n"
-               "Content-Type: %s\r\n"
-               "Content-Length: %ld\r\n"
-               "Connection: close\r\n"
-               "\r\n", // <--- The Empty Line means "Headers are done"
-               mime_type, file_size);
+  int header_len = snprintf(header_buffer, sizeof(header_buffer),
+                            "HTTP/1.1 200 OK\r\n"
+                            "Content-Type: %s\r\n"
+                            "Content-Length: %ld\r\n"
+                            "Connection: close\r\n"
+                            "\r\n",
+                            mime_type, file_size);
 
   write(cfd, header_buffer, header_len);
 
   size_t size;
-  while (size = fread(buffer, sizeof(char), BUFFER_SIZE, fr)) {
+  while ((size = fread(buffer, sizeof(char), BUFFER_SIZE, fr))) {
     write(cfd, buffer, size);
   }
 
@@ -146,7 +145,6 @@ void handle_request(int cfd) {
   ssize_t bytes_read = read(cfd, buffer, BUFFER_SIZE - 1);
   buffer[bytes_read] = 0;
   printf("It works!!!!\n");
-  // printf("%s\n", buffer);
 
   // GET, POST, ...
   char request_type[10];
@@ -173,7 +171,6 @@ void handle_request(int cfd) {
 }
 
 int main(int argc, char *argv[]) {
-
   realpath("public", public_root);
   int sfd, cfd;
   socklen_t peer_addr_size;
